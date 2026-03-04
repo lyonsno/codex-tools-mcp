@@ -9,6 +9,7 @@ pub enum CliAction {
     Run {
         log_level: Option<String>,
         workdir: Option<PathBuf>,
+        restrict_to_workdir: bool,
     },
     Help,
     Version,
@@ -20,6 +21,7 @@ where
 {
     let mut log_level = None;
     let mut workdir = None;
+    let mut restrict_to_workdir = false;
     let mut iter = args.peekable();
 
     while let Some(arg) = iter.next() {
@@ -44,6 +46,8 @@ where
                         .next()
                         .ok_or_else(|| "--workdir requires a value".to_string())?;
                     workdir = Some(PathBuf::from(value));
+                } else if arg == "--restrict-to-workdir" {
+                    restrict_to_workdir = true;
                 } else {
                     return Err(format!("Unknown argument: {arg}"));
                 }
@@ -51,11 +55,15 @@ where
         }
     }
 
-    Ok(CliAction::Run { log_level, workdir })
+    Ok(CliAction::Run {
+        log_level,
+        workdir,
+        restrict_to_workdir,
+    })
 }
 
 pub fn print_usage() {
-    println!("Usage: codex-tools-mcp [OPTIONS]\n\nOptions:\n  --log-level <level>   Override default log level (info)\n  --workdir <path>      Set process working directory before serving\n  -V, --version         Print version information\n  -h, --help            Print this help message");
+    println!("Usage: codex-tools-mcp [OPTIONS]\n\nOptions:\n  --log-level <level>        Override default log level (info)\n  --workdir <path>           Set process working directory before serving\n  --restrict-to-workdir      Reject apply_patch paths that escape the working directory\n  -V, --version              Print version information\n  -h, --help                 Print this help message");
 }
 
 pub fn init_logging(log_level: Option<String>) -> Result<(), Box<dyn Error>> {

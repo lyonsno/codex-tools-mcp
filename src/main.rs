@@ -27,7 +27,11 @@ fn try_main() -> Result<(), Box<dyn Error>> {
             println!("{}", cli::version_string());
             Ok(())
         }
-        CliAction::Run { log_level, workdir } => {
+        CliAction::Run {
+            log_level,
+            workdir,
+            restrict_to_workdir,
+        } => {
             if let Some(workdir) = workdir {
                 env::set_current_dir(&workdir).map_err(|err| {
                     io::Error::new(
@@ -39,8 +43,25 @@ fn try_main() -> Result<(), Box<dyn Error>> {
                     )
                 })?;
             }
+
+            let restrict_root = if restrict_to_workdir {
+                let cwd = env::current_dir().map_err(|err| {
+                    io::Error::other(format!(
+                        "Failed to resolve current working directory: {err}"
+                    ))
+                })?;
+                Some(cwd.canonicalize().map_err(|err| {
+                    io::Error::other(format!(
+                        "Failed to canonicalize working directory {}: {err}",
+                        cwd.display()
+                    ))
+                })?)
+            } else {
+                None
+            };
+
             init_logging(log_level)?;
-            server::run_server()?;
+            server::run_server(server::ServerConfig { restrict_root })?;
             Ok(())
         }
     }
