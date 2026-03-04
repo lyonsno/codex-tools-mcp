@@ -6,8 +6,8 @@ use std::io::{self, BufRead, Write};
 use std::path::{Component, Path, PathBuf};
 
 use crate::tools::{
-    apply_patch_tool_schema, update_plan_tool_schema, INVALID_PARAMS, INVALID_REQUEST,
-    JSONRPC_VERSION, MCP_PROTOCOL_VERSION, METHOD_NOT_FOUND, PARSE_ERROR,
+    apply_patch_tool_schema, ask_user_tool_schema, update_plan_tool_schema, INVALID_PARAMS,
+    INVALID_REQUEST, JSONRPC_VERSION, MCP_PROTOCOL_VERSION, METHOD_NOT_FOUND, PARSE_ERROR,
 };
 
 pub struct ServerConfig {
@@ -122,7 +122,11 @@ fn handle_tools_list(request_id: Option<Value>) -> io::Result<()> {
         return send_error(None, INVALID_REQUEST, "tools/list must include an id");
     }
 
-    let tools = vec![update_plan_tool_schema(), apply_patch_tool_schema()];
+    let tools = vec![
+        update_plan_tool_schema(),
+        ask_user_tool_schema(),
+        apply_patch_tool_schema(),
+    ];
     debug!("advertising {} tools", tools.len());
     let result = json!({ "tools": tools });
     send_result(request_id, result)
@@ -161,6 +165,7 @@ fn handle_tools_call(
             });
             send_result(request_id, result)
         }
+        Some("ask_user") => handle_ask_user_tool(request_id, &params_obj),
         Some("apply_patch") => handle_apply_patch_tool(request_id, &params_obj, config),
         Some(other) => {
             warn!("unknown tool requested: {other}");
@@ -172,6 +177,116 @@ fn handle_tools_call(
         }
         None => send_error(request_id, INVALID_PARAMS, "tools/call params missing name"),
     }
+}
+
+fn handle_ask_user_tool(
+    request_id: Option<Value>,
+    params_obj: &serde_json::Map<String, Value>,
+) -> io::Result<()> {
+    let arguments = match params_obj.get("arguments") {
+        Some(Value::Object(arguments)) => arguments,
+        Some(_) => {
+            return send_error(
+                request_id,
+                INVALID_PARAMS,
+                "ask_user arguments must be an object",
+            )
+        }
+        None => return send_error(request_id, INVALID_PARAMS, "ask_user requires arguments"),
+    };
+
+    const ALLOWED_ARGUMENT_KEYS: [&str; 3] = ["question", "choices", "timeout_seconds"];
+    if let Some(unknown_key) = arguments
+        .keys()
+        .find(|key| !ALLOWED_ARGUMENT_KEYS.contains(&key.as_str()))
+    {
+        return send_error(
+            request_id,
+            INVALID_PARAMS,
+            format!("ask_user received unknown argument: {unknown_key}"),
+        );
+    }
+
+    let question = match arguments.get("question").and_then(Value::as_str) {
+        Some(question) if !question.trim().is_empty() => question,
+        Some(_) => {
+            return send_error(
+                request_id,
+                INVALID_PARAMS,
+                "ask_user question must be a non-empty string",
+            )
+        }
+        None => {
+            return send_error(
+                request_id,
+                INVALID_PARAMS,
+                "ask_user question must be provided as a string",
+            )
+        }
+    };
+
+    if let Some(choices) = arguments.get("choices") {
+        let choices = match choices.as_array() {
+            Some(choices) => choices,
+            None => {
+                return send_error(
+                    request_id,
+                    INVALID_PARAMS,
+                    "ask_user choices must be an array of strings",
+                )
+            }
+        };
+
+        let all_strings = choices.iter().all(|choice| choice.as_str().is_some());
+        if !all_strings {
+            return send_error(
+                request_id,
+                INVALID_PARAMS,
+                "ask_user choices must be an array of strings",
+            );
+        }
+    }
+
+    if let Some(timeout_seconds) = arguments.get("timeout_seconds") {
+        let is_positive_integer = timeout_seconds.as_i64().is_some_and(|value| value > 0);
+        if !is_positive_integer {
+            return send_error(
+                request_id,
+                INVALID_PARAMS,
+                "ask_user timeout_seconds must be a positive integer",
+            );
+        }
+    }
+
+    let requested_backend = std::env::var("CODEX_TOOLS_MCP_ASK_USER_BACKEND")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "none".to_string());
+
+    info!(
+        "ask_user requested but interactive backend is unsupported (backend={})",
+        requested_backend
+    );
+
+    let result = json!({
+        "content": [
+            {
+                "type": "text",
+                "text": format!(
+                    "ask_user unsupported: interactive popup backend is unavailable in this build. question={}",
+                    question
+                ),
+            }
+        ],
+        "isError": true,
+        "error": {
+            "kind": "unsupported",
+            "tool": "ask_user",
+            "backend": requested_backend,
+            "retryable": false,
+        }
+    });
+    send_result(request_id, result)
 }
 
 fn handle_apply_patch_tool(
@@ -313,7 +428,9 @@ fn validate_patch_path(path_text: &str, root: &Path, kind: PatchPathKind) -> Res
     let normalized = normalize_relative_path(path)
         .ok_or_else(|| format!("Patch path escapes workdir: {path_text}"))?;
     if normalized.as_os_str().is_empty() {
-        return Err(format!("Patch path cannot resolve to workdir root: {path_text}"));
+        return Err(format!(
+            "Patch path cannot resolve to workdir root: {path_text}"
+        ));
     }
 
     let allow_terminal_symlink_delete = matches!(kind, PatchPathKind::Delete);

@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 pub const JSONRPC_VERSION: &str = "2.0";
-pub const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
+pub const MCP_PROTOCOL_VERSION: &str = "2025-03-26";
 pub const PARSE_ERROR: i64 = -32700;
 pub const INVALID_REQUEST: i64 = -32600;
 pub const METHOD_NOT_FOUND: i64 = -32601;
@@ -33,6 +33,36 @@ pub fn update_plan_tool_schema() -> Value {
                 }
             },
             "required": ["plan"],
+            "additionalProperties": false,
+        }
+    })
+}
+
+pub fn ask_user_tool_schema() -> Value {
+    serde_json::json!({
+        "name": "ask_user",
+        "description": "Ask the user a question and wait for an answer. This server currently supports an unsupported fallback response when no interactive backend is available.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "Prompt shown to the user",
+                    "minLength": 1,
+                    "pattern": ".*\\S.*",
+                },
+                "choices": {
+                    "type": "array",
+                    "description": "Optional list of suggested choices",
+                    "items": { "type": "string" },
+                },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Optional timeout in seconds",
+                    "minimum": 1,
+                }
+            },
+            "required": ["question"],
             "additionalProperties": false,
         }
     })

@@ -1,6 +1,6 @@
 # Codex Tools MCP Server
 
-A minimal [Model Context Protocol](https://modelcontextprotocol.io/) server implemented in Rust that exposes the `update_plan` and `apply_patch` tools used by the Codex GPT-5 model. It lets developers integrate these tools inside any MCP-aware client without running the Codex CLI.
+A minimal [Model Context Protocol](https://modelcontextprotocol.io/) server implemented in Rust that exposes the `update_plan`, `ask_user`, and `apply_patch` tools used by the Codex GPT-5 model. It lets developers integrate these tools inside any MCP-aware client without running the Codex CLI.
 
 ## Build & Run
 **Prerequisite:** install Rust toolchain 1.90.0 or newer (edition 2024 support) before building, e.g. `rustup toolchain install 1.90.0` and `rustup override set 1.90.0` in this directory.
@@ -14,9 +14,10 @@ The binary communicates over stdio using JSON-RPC 2.0. Launch it from an MCP-com
 ## Tool Schemas
 
 - `update_plan`: matches the schema defined in `codex-rs/core/src/plan_tool.rs` (required `plan` array with `step` and `status`, optional `explanation`).
+- `ask_user`: accepts a required `question` string with optional `choices` (string array) and `timeout_seconds` (positive integer). This build currently returns a structured unsupported response because no interactive popup backend is available.
 - `apply_patch`: matches the JSON variant defined in `codex-rs/core/src/tool_apply_patch.rs` (required `input` string containing the full patch payload).
 
-The `apply_patch` tool reuses the official Codex `codex-apply-patch` crate to parse and apply patches, so file changes are applied exactly as in the CLI. The server streams the CLI-equivalent summary back in the MCP response. `update_plan` returns the acknowledgement "Plan updated".
+The `apply_patch` tool reuses the official Codex `codex-apply-patch` crate to parse and apply patches, so file changes are applied exactly as in the CLI. The server streams the CLI-equivalent summary back in the MCP response. `update_plan` returns the acknowledgement "Plan updated". `ask_user` currently responds with `isError: true` and structured error metadata (`kind: "unsupported"`) until an interactive backend is implemented.
 
 ## Agents SDK Demo
 
