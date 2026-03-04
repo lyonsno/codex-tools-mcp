@@ -11,6 +11,8 @@ cargo build --release
 
 The binary communicates over stdio using JSON-RPC 2.0. Launch it from an MCP-compatible host (for example, the MCP Inspector or any tool runner that can spawn stdio-based servers). Run `./target/release/codex-tools-mcp --help` for command-line options (log level, version information).
 
+During `initialize`, the server negotiates MCP protocol versions `2025-06-18` (newer clients) and `2025-03-26` (Zed compatibility). Unsupported versions return `INVALID_PARAMS`.
+
 ## Tool Schemas
 
 - `update_plan`: matches the schema defined in `codex-rs/core/src/plan_tool.rs` (required `plan` array with `step` and `status`, optional `explanation`).

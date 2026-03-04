@@ -17,6 +17,247 @@ fn prints_version() {
         .stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")));
 }
 
+#[test]
+fn initialize_uses_requested_newer_protocol_version() {
+    let dir = tempdir().expect("create temp dir");
+
+    let mut cmd = Command::cargo_bin("codex-tools-mcp").expect("binary exists");
+    cmd.arg("--log-level").arg("error");
+    cmd.current_dir(dir.path());
+
+    let input = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"test","version":"0"},"capabilities":{}}}
+"#;
+    let mut child = cmd
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn server");
+
+    if let Some(stdin) = child.stdin.as_mut() {
+        use std::io::Write;
+        stdin.write_all(input.as_bytes()).expect("write stdin");
+    }
+
+    let output = child.wait_with_output().expect("collect output");
+    assert!(
+        output.status.success(),
+        "process exited with failure.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let messages = parse_jsonl_stdout(&output.stdout);
+    let initialize_response = find_response_by_id(&messages, 1);
+    let negotiated_version = initialize_response
+        .get("result")
+        .and_then(|result| result.get("protocolVersion"))
+        .and_then(Value::as_str)
+        .expect("initialize result should include protocolVersion");
+    assert_eq!(
+        negotiated_version, "2025-06-18",
+        "server should negotiate the newer protocol when requested"
+    );
+}
+
+#[test]
+fn initialize_uses_requested_legacy_zed_protocol_version() {
+    let dir = tempdir().expect("create temp dir");
+
+    let mut cmd = Command::cargo_bin("codex-tools-mcp").expect("binary exists");
+    cmd.arg("--log-level").arg("error");
+    cmd.current_dir(dir.path());
+
+    let input = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","clientInfo":{"name":"test","version":"0"},"capabilities":{}}}
+"#;
+    let mut child = cmd
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn server");
+
+    if let Some(stdin) = child.stdin.as_mut() {
+        use std::io::Write;
+        stdin.write_all(input.as_bytes()).expect("write stdin");
+    }
+
+    let output = child.wait_with_output().expect("collect output");
+    assert!(
+        output.status.success(),
+        "process exited with failure.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let messages = parse_jsonl_stdout(&output.stdout);
+    let initialize_response = find_response_by_id(&messages, 1);
+    let negotiated_version = initialize_response
+        .get("result")
+        .and_then(|result| result.get("protocolVersion"))
+        .and_then(Value::as_str)
+        .expect("initialize result should include protocolVersion");
+    assert_eq!(
+        negotiated_version, "2025-03-26",
+        "server should negotiate Zed legacy protocol when requested"
+    );
+}
+
+#[test]
+fn initialize_rejects_unsupported_protocol_version() {
+    let dir = tempdir().expect("create temp dir");
+
+    let mut cmd = Command::cargo_bin("codex-tools-mcp").expect("binary exists");
+    cmd.arg("--log-level").arg("error");
+    cmd.current_dir(dir.path());
+
+    let input = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2099-01-01","clientInfo":{"name":"test","version":"0"},"capabilities":{}}}
+"#;
+    let mut child = cmd
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn server");
+
+    if let Some(stdin) = child.stdin.as_mut() {
+        use std::io::Write;
+        stdin.write_all(input.as_bytes()).expect("write stdin");
+    }
+
+    let output = child.wait_with_output().expect("collect output");
+    assert!(
+        output.status.success(),
+        "process exited with failure.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let messages = parse_jsonl_stdout(&output.stdout);
+    let initialize_response = find_response_by_id(&messages, 1);
+    assert!(
+        initialize_response.get("result").is_none(),
+        "unsupported protocolVersion should not return initialize success result: {initialize_response:?}"
+    );
+    let error = initialize_response
+        .get("error")
+        .and_then(Value::as_object)
+        .expect("unsupported protocolVersion should return JSON-RPC error object");
+    assert_eq!(
+        error.get("code").and_then(Value::as_i64),
+        Some(-32602),
+        "unsupported protocolVersion should return INVALID_PARAMS"
+    );
+}
+
+#[test]
+fn initialize_rejects_missing_protocol_version() {
+    let dir = tempdir().expect("create temp dir");
+
+    let mut cmd = Command::cargo_bin("codex-tools-mcp").expect("binary exists");
+    cmd.arg("--log-level").arg("error");
+    cmd.current_dir(dir.path());
+
+    let input = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"test","version":"0"},"capabilities":{}}}
+"#;
+    let mut child = cmd
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn server");
+
+    if let Some(stdin) = child.stdin.as_mut() {
+        use std::io::Write;
+        stdin.write_all(input.as_bytes()).expect("write stdin");
+    }
+
+    let output = child.wait_with_output().expect("collect output");
+    assert!(
+        output.status.success(),
+        "process exited with failure.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let messages = parse_jsonl_stdout(&output.stdout);
+    let initialize_response = find_response_by_id(&messages, 1);
+    assert!(
+        initialize_response.get("result").is_none(),
+        "missing protocolVersion should not return initialize success result: {initialize_response:?}"
+    );
+    let error = initialize_response
+        .get("error")
+        .and_then(Value::as_object)
+        .expect("missing protocolVersion should return JSON-RPC error object");
+    assert_eq!(
+        error.get("code").and_then(Value::as_i64),
+        Some(-32602),
+        "missing protocolVersion should return INVALID_PARAMS"
+    );
+    assert!(
+        error
+            .get("message")
+            .and_then(Value::as_str)
+            .is_some_and(|message| message.contains("protocolVersion string")),
+        "missing protocolVersion should produce a clear validation message: {error:?}"
+    );
+}
+
+#[test]
+fn initialize_rejects_non_string_protocol_version() {
+    let dir = tempdir().expect("create temp dir");
+
+    let mut cmd = Command::cargo_bin("codex-tools-mcp").expect("binary exists");
+    cmd.arg("--log-level").arg("error");
+    cmd.current_dir(dir.path());
+
+    let input = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":20250618,"clientInfo":{"name":"test","version":"0"},"capabilities":{}}}
+"#;
+    let mut child = cmd
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn server");
+
+    if let Some(stdin) = child.stdin.as_mut() {
+        use std::io::Write;
+        stdin.write_all(input.as_bytes()).expect("write stdin");
+    }
+
+    let output = child.wait_with_output().expect("collect output");
+    assert!(
+        output.status.success(),
+        "process exited with failure.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let messages = parse_jsonl_stdout(&output.stdout);
+    let initialize_response = find_response_by_id(&messages, 1);
+    assert!(
+        initialize_response.get("result").is_none(),
+        "non-string protocolVersion should not return initialize success result: {initialize_response:?}"
+    );
+    let error = initialize_response
+        .get("error")
+        .and_then(Value::as_object)
+        .expect("non-string protocolVersion should return JSON-RPC error object");
+    assert_eq!(
+        error.get("code").and_then(Value::as_i64),
+        Some(-32602),
+        "non-string protocolVersion should return INVALID_PARAMS"
+    );
+    assert!(
+        error
+            .get("message")
+            .and_then(Value::as_str)
+            .is_some_and(|message| message.contains("protocolVersion string")),
+        "non-string protocolVersion should produce a clear validation message: {error:?}"
+    );
+}
+
 fn parse_jsonl_stdout(stdout: &[u8]) -> Vec<Value> {
     let text = String::from_utf8(stdout.to_vec()).expect("utf8 stdout");
     text.lines()

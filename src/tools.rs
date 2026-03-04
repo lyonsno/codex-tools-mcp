@@ -1,7 +1,10 @@
 use serde_json::Value;
 
 pub const JSONRPC_VERSION: &str = "2.0";
-pub const MCP_PROTOCOL_VERSION: &str = "2025-03-26";
+pub const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
+pub const MCP_PROTOCOL_VERSION_ZED: &str = "2025-03-26";
+pub const SUPPORTED_MCP_PROTOCOL_VERSIONS: [&str; 2] =
+    [MCP_PROTOCOL_VERSION, MCP_PROTOCOL_VERSION_ZED];
 pub const PARSE_ERROR: i64 = -32700;
 pub const INVALID_REQUEST: i64 = -32600;
 pub const METHOD_NOT_FOUND: i64 = -32601;

@@ -7,7 +7,8 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::tools::{
     apply_patch_tool_schema, ask_user_tool_schema, update_plan_tool_schema, INVALID_PARAMS,
-    INVALID_REQUEST, JSONRPC_VERSION, MCP_PROTOCOL_VERSION, METHOD_NOT_FOUND, PARSE_ERROR,
+    INVALID_REQUEST, JSONRPC_VERSION, METHOD_NOT_FOUND, PARSE_ERROR,
+    SUPPORTED_MCP_PROTOCOL_VERSIONS,
 };
 
 pub struct ServerConfig {
@@ -88,16 +89,35 @@ fn handle_initialize(request_id: Option<Value>, params: Option<Value>) -> io::Re
         return send_error(None, INVALID_REQUEST, "initialize must include an id");
     }
 
-    if !params.as_ref().is_some_and(Value::is_object) {
-        return send_error(
-            request_id,
-            INVALID_PARAMS,
-            "initialize params must be object",
-        );
-    }
+    let params_obj = match params {
+        Some(Value::Object(map)) => map,
+        _ => {
+            return send_error(
+                request_id,
+                INVALID_PARAMS,
+                "initialize params must be object",
+            )
+        }
+    };
+
+    let client_protocol_version = match params_obj.get("protocolVersion").and_then(Value::as_str) {
+        Some(version) => version,
+        None => {
+            return send_error(
+                request_id,
+                INVALID_PARAMS,
+                "initialize params must include protocolVersion string",
+            )
+        }
+    };
+
+    let negotiated_protocol_version = match negotiate_protocol_version(client_protocol_version) {
+        Ok(version) => version,
+        Err(message) => return send_error(request_id, INVALID_PARAMS, message),
+    };
 
     let result = json!({
-        "protocolVersion": MCP_PROTOCOL_VERSION,
+        "protocolVersion": negotiated_protocol_version,
         "serverInfo": {
             "name": "codex-tools-mcp",
             "version": env!("CARGO_PKG_VERSION"),
@@ -115,6 +135,17 @@ fn handle_initialize(request_id: Option<Value>, params: Option<Value>) -> io::Re
         "method": "notifications/initialized",
         "params": Value::Null,
     }))
+}
+
+fn negotiate_protocol_version(client_protocol_version: &str) -> Result<&str, String> {
+    if SUPPORTED_MCP_PROTOCOL_VERSIONS.contains(&client_protocol_version) {
+        return Ok(client_protocol_version);
+    }
+
+    let supported = SUPPORTED_MCP_PROTOCOL_VERSIONS.join(", ");
+    Err(format!(
+        "Unsupported protocolVersion: {client_protocol_version}. Supported protocol versions: {supported}"
+    ))
 }
 
 fn handle_tools_list(request_id: Option<Value>) -> io::Result<()> {
