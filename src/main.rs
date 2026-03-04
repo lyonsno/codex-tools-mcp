@@ -5,6 +5,7 @@ mod tools;
 use cli::{init_logging, parse_cli, print_usage, CliAction};
 use std::env;
 use std::error::Error;
+use std::io;
 use std::process;
 
 fn main() {
@@ -26,7 +27,18 @@ fn try_main() -> Result<(), Box<dyn Error>> {
             println!("{}", cli::version_string());
             Ok(())
         }
-        CliAction::Run { log_level } => {
+        CliAction::Run { log_level, workdir } => {
+            if let Some(workdir) = workdir {
+                env::set_current_dir(&workdir).map_err(|err| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!(
+                            "Failed to set working directory to {}: {err}",
+                            workdir.display()
+                        ),
+                    )
+                })?;
+            }
             init_logging(log_level)?;
             server::run_server()?;
             Ok(())
